@@ -3,7 +3,7 @@ name: Docker Image Scan
 on: [push]
 
 env:
-  USER: "aiboosts"
+  USER: "test"
 
 jobs:
   trivy_scan:
