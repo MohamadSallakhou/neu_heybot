@@ -7,6 +7,8 @@ WORKDIR /app
 # 3. System-Dependencies installieren (für Curl, Compiler-Tools o. Ä.)
 RUN apt-get update && apt-get install -y \
     build-essential \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -14,9 +16,8 @@ RUN apt-get update && apt-get install -y \
 #    Zuerst nur requirements kopieren, damit Docker-Cache greift
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
 # 5. Applikationscode kopieren
-COPY . .
+COPY ./app /app
 
 # 6. ENV-Defaults (können in Deinem K8s-Deployment per envFrom überschrieben werden)
 ENV OLLAMA_API_URL="http://ollama-svc.default.svc.cluster.local:11434" \
