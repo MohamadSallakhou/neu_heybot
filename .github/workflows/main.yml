@@ -1,78 +1,50 @@
-name: Build & Scan Docker Image
+name: Docker Image Scan
 
-on:
-  push:
-    branches:
-      - main
+on: [push]
 
 env:
-  REGISTRY: ghcr.io
-  USER: ${{ github.actor }}
-  IMAGE_NAME: dynamic-risk-analyzer
+  USER: "mohamadsallakhou"
 
 jobs:
-  build_and_scan:
+  trivy_scan:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Repo auschecken
+      # Checkout the code
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
 
-      # 2) Buildx & QEMU für Multi-Arch
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      # 3) Login in GHCR
-      - name: Log in to GitHub Container Registry
+      # Login to GitHub Container Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ env.USER }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}  # Use the GitHub username (actor)
+          password: ${{ secrets.GHCR_TOKEN }}  # Use the secret token
 
-      # 4) Erstes Image bauen & pushen
-      - name: Build & push base image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: scanner/Dockerfile
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.USER }}/${{ env.IMAGE_NAME }}:latest
-
-      # 5) Trivy-Scan
-      - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@v0.9.2
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.USER }}/${{ env.IMAGE_NAME }}:latest
-          format: json
-          output: trivy_output.json
-
-      # 6) Zweites Image mit Scan-Report bauen & pushen
-      - name: Build & push image with Trivy report
+      # Build the Docker image
+      - name: Build the hello-docker Docker image
         run: |
-          docker build \
-            -f scanner/Dockerfile.trivy-analysis \
-            -t ${{ env.REGISTRY }}/${{ env.USER }}/${{ env.IMAGE_NAME }}-with-trivy-output:latest \
-            .
-          docker push ${{ env.REGISTRY }}/${{ env.USER }}/${{ env.IMAGE_NAME }}-with-trivy-output:latest
+          docker build -t ghcr.io/$USER/heybot:latest .
 
-      # 7) Optional: Login & Push zu Docker Hub
-      - name: Log in to Docker Hub
-        if: ${{ secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
-        uses: docker/login-action@v2
+      # Install Trivy (Specific version v0.60.1)
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.0
         with:
-          registry: docker.io
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          version: latest # Specify the desired version
 
-      - name: Push to Docker Hub
-        if: ${{ always() && secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
+      # Scan the Docker image for vulnerabilities
+      - name: Scan Docker image for vulnerabilities
         run: |
-          docker tag \
-            ${{ env.REGISTRY }}/${{ env.USER }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          trivy image --severity HIGH,CRITICAL --format json --output trivy_output.json ghcr.io/$USER/heybot:latest
+
+      # Build the new Docker image with trivy_output.json
+      - name: Build the new Docker image with trivy_output.json
+        run: |
+          docker build -t ghcr.io/$USER/heybot-with-trivy-output:latest -f Dockerfile.trivy-analysis .
+
+      # Push the Docker image to GitHub Container Registry
+      - name: Push the Docker image to GitHub Container Registry
+        run: |
+          docker push ghcr.io/$USER/heybot-with-trivy-output:latest
+
