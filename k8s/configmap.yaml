@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: heybot-config
+  namespace: default
+data:
+  HUMOR_MODEL: "model_humor.txt"
+  OTHER_SETTING: "some.value"

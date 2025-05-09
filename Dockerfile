@@ -1,19 +1,23 @@
-# Use an official Python image
+# 1. Base Image mit Python & Dependencies
 FROM python:3.11-slim
 
-# Set work directory
+# 2. Arbeitsverzeichnis
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy app files
-COPY ./app /app
-
-# Install Python dependencies
+# 3. Copy requirements und install
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# 4. Copy Quellcode
+COPY . .
+
+# 5. Env-Defaults (können in K8s-Deployment überschrieben werden)
+ENV OLLAMA_HOST="http://ollama-service:11434" \
+    DISCORD_WEBHOOK_URL="" \
+    MODEL_HUMOR_PATH="model_humor.txt"
+
+# 6. Port (falls du einen HTTP-Server betreibst, sonst optional)
+# EXPOSE 8080
+
+# 7. EntryPoint
+CMD ["python", "app/main.py"]

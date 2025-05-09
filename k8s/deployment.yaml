@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: heybot-app
   namespace: default
+  labels:
+    app: heybot
 spec:
   replicas: 1
   selector:
@@ -13,11 +15,38 @@ spec:
       labels:
         app: heybot
     spec:
+      serviceAccountName: heybot-sa
       containers:
         - name: heybot
           image: ghcr.io/mohamadsallakhou/heybot-with-trivy-output:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: heybot-config
+            - secretRef:
+                name: heybot-secrets
           ports:
-            - containerPort: 7861
-          # command: ["/bin/bash", "-c", "while true; do sleep 3600; done"]
+            - name: http
+              containerPort: 7861
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 7861
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 7861
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
       imagePullSecrets:
-        - name: ghcr-secret  # Das ImagePullSecret, das du vorher erstellt hast
+        - name: ghcr-secret
