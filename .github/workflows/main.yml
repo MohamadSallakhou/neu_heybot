@@ -1,19 +1,11 @@
-name: CI/CD mit Docker-Scan
+name: Docker Image Scan
 
 on:
   push:
-    branches:
-      - main
-
-env:
-  # GitHub Packages (GHCR) Registry
-  REGISTRY: ghcr.io
-  REPOSITORY: ${{ github.repository_owner }}/heybot
-  IMAGE_BASE: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}
+    branches: [ main ]
 
 jobs:
-  build-and-scan:
-    name: Build, Scan & Push
+  trivy_scan:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,60 +13,43 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2) Buildx installieren (für multi-arch Builds, optional)
+      # 2) Buildx und QEMU für Multi-Arch aktivieren (optional)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # 3) Anmeldung in GHCR
+      # 3) Einloggen in GHCR
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      # 4) Erstes Image bauen (wird lokal getaggt, aber noch nicht gepusht)
-      - name: Build base image
+      # 4) Docker-Image bauen & pushen
+      - name: Build & push heybot:latest
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: Dockerfile
-          load: true                   # lädt das Image in die lokale Docker-Daemon
+          push: true
           tags: |
-            ${{ env.IMAGE_BASE }}:latest
+            ghcr.io/${{ github.actor }}/heybot:latest
 
-      # 5) Trivy-Scan durchführen und Report speichern
+      # 5) Trivy-Scan
       - name: Run Trivy scan
-        uses: aquasecurity/trivy-action@v0.8.2
+        uses: aquasecurity/trivy-action@v0.9.2
         with:
-          image-ref: ${{ env.IMAGE_BASE }}:latest
+          image-ref: ghcr.io/${{ github.actor }}/heybot:latest
           format: json
           output: trivy_output.json
 
-      # 6) Trivy-Report als Artefakt hochladen
-      - name: Upload Trivy report
-        uses: actions/upload-artifact@v3
-        with:
-          name: trivy-report
-          path: trivy_output.json
-
-      # 7) Zweites Image bauen, das den Report enthält
-      - name: Build image with Trivy report
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: Dockerfile.trivy-analysis
-          push: true
-          tags: |
-            ${{ env.IMAGE_BASE }}-with-trivy-output:latest
-
-      # 8) Optional: Original-Image in GHCR pushen
-      - name: Push base image
-        if: always()
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_BASE }}:latest
+      # 6) neues Image mit Scan-Report bauen & pushen
+      - name: Build & push heybot-with-trivy-output:latest
+        run: |
+          docker build \
+            -f Dockerfile.trivy-analysis \
+            -t ghcr.io/${{ github.actor }}/heybot-with-trivy-output:latest \
+            .
+          docker push ghcr.io/${{ github.actor }}/heybot-with-trivy-output:latest
