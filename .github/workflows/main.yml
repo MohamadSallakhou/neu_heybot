@@ -1,50 +1,80 @@
-name: Docker Image Scan
+name: CI/CD mit Docker-Scan
 
-on: [push]
+on:
+  push:
+    branches:
+      - main
 
 env:
-  USER: "mohamadsallakhou"
+  # GitHub Packages (GHCR) Registry
+  REGISTRY: ghcr.io
+  REPOSITORY: ${{ github.repository_owner }}/heybot
+  IMAGE_BASE: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}
 
 jobs:
-  trivy_scan:
+  build-and-scan:
+    name: Build, Scan & Push
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the code
+      # 1) Code auschecken
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      # Login to GitHub Container Registry
-      - name: Login to GitHub Container Registry
+      # 2) Buildx installieren (für multi-arch Builds, optional)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      # 3) Anmeldung in GHCR
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}  # Use the GitHub username (actor)
-          password: ${{ secrets.GHCR_TOKEN }}  # Use the secret token
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
-      # Build the Docker image
-      - name: Build the hello-docker Docker image
-        run: |
-          docker build -t ghcr.io/$USER/heybot:latest .
-
-      # Install Trivy (Specific version v0.60.1)
-      - name: Install Trivy
-        uses: aquasecurity/setup-trivy@v0.2.0
+      # 4) Erstes Image bauen (wird lokal getaggt, aber noch nicht gepusht)
+      - name: Build base image
+        uses: docker/build-push-action@v4
         with:
-          version: latest # Specify the desired version
+          context: .
+          file: Dockerfile
+          load: true                   # lädt das Image in die lokale Docker-Daemon
+          tags: |
+            ${{ env.IMAGE_BASE }}:latest
 
-      # Scan the Docker image for vulnerabilities
-      - name: Scan Docker image for vulnerabilities
-        run: |
-          trivy image --severity HIGH,CRITICAL --format json --output trivy_output.json ghcr.io/$USER/heybot:latest
-      
-      # Build the new Docker image with trivy_output.json
-      - name: Build the new Docker image with trivy_output.json
-        run: |
-          docker build -t ghcr.io/$USER/heybot-with-trivy-output:latest -f Dockerfile.trivy-analysis .
-      
-      # Push the Docker image to GitHub Container Registry
-      - name: Push the Docker image to GitHub Container Registry
-        run: |
-          docker push ghcr.io/$USER/heybot-with-trivy-output:latest
+      # 5) Trivy-Scan durchführen und Report speichern
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@v0.8.2
+        with:
+          image-ref: ${{ env.IMAGE_BASE }}:latest
+          format: json
+          output: trivy_output.json
 
+      # 6) Trivy-Report als Artefakt hochladen
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v3
+        with:
+          name: trivy-report
+          path: trivy_output.json
+
+      # 7) Zweites Image bauen, das den Report enthält
+      - name: Build image with Trivy report
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: Dockerfile.trivy-analysis
+          push: true
+          tags: |
+            ${{ env.IMAGE_BASE }}-with-trivy-output:latest
+
+      # 8) Optional: Original-Image in GHCR pushen
+      - name: Push base image
+        if: always()
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_BASE }}:latest
