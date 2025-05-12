@@ -4,25 +4,11 @@ metadata:
   name: heybot
   namespace: argocd
 spec:
-  project: default
-
+  destination:
+    namespace: default
+    server: https://kubernetes.default.svc
   source:
     repoURL: 'https://github.com/mohamadsallakhou/heybot'
     targetRevision: HEAD
     path: 'k8s'
-    directory:
-      recurse: true
-    kustomize:
-      # Name-Prefix für alle Ressourcen, damit sie in Argo CD besser gruppiert sind
-      namePrefix: heybot-
-
-  destination:
-    server: 'https://kubernetes.default.svc'
-    namespace: default
-
-  syncPolicy:
-    automated:
-      prune: true       # entfernt Objekte, die aus Git entfernt wurden
-      selfHeal: true    # stellt abweichende Ressourcen automatisch wieder her
-    syncOptions:
-      - CreateNamespace=true  # legt das Namespace an, falls es noch nicht existiert
+  project: default
