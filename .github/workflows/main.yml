@@ -1,66 +1,153 @@
-name: CI/CD neu_heybotChat
+name: CI/CD Pipeline
 
 on:
   push:
     branches:
       - main
+  pull_request:
 
 env:
-  REGISTRY: ghcr.io
-  USER_LOWER: ${{ toLower(github.actor) }}
-  IMAGE_NAME: heybot
-  ANALYSIS_IMAGE: heybot-with-trivy-output
-  TAG: ${{ github.sha }}
+  USER: "mohamadsallakhou"
+  IMAGE: ghcr.io/${{ github.actor }}/heybot:${{ github.sha }}
 
 jobs:
-  build_and_scan:
+  # 1) Build + Push Base-Image
+  build:
+    name: Build & Push Docker Image
     runs-on: ubuntu-latest
-
     steps:
-      # 1) Checkout
       - uses: actions/checkout@v2
 
-      # 2) Login zu GHCR
-      - name: Login to GitHub Container Registry
+      - name: Set up QEMU (für Multi-Arch Builds, optional)
+        uses: docker/setup-qemu-action@v2
+
+      - name: Login to GHCR
         uses: docker/login-action@v2
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      # 3) Build & Push des heybot-Images
-      - name: Build & Push Main Image
-        run: |
-          docker build -t ${{ env.REGISTRY }}/${{ env.USER_LOWER }}/${{ env.IMAGE_NAME }}:${{ env.TAG }} .
-          docker push ${{ env.REGISTRY }}/${{ env.USER_LOWER }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+      - name: Build Docker image
+        run: docker build -t $IMAGE .
 
-      # 4) Trivy installieren & ausführen
+      - name: Push Docker image
+        run: docker push $IMAGE
+
+      - name: Upload image name for downstream jobs
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: image-info
+          path: |
+            <<EOF
+            IMAGE=${IMAGE}
+            EOF
+
+  # 2) Test
+  test:
+    name: Run Python Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Pytest
+        run: pytest --junitxml=pytest-report.xml
+      - name: Upload test report
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: pytest-report
+          path: pytest-report.xml
+
+  # 3) Security-Scans: Trivy + OWASP Dependency-Check
+  security:
+    name: Security Scans
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Download image-info
+        uses: actions/download-artifact@v2
+        with:
+          name: image-info
+
+      - name: Load IMAGE variable
+        run: source image-info
+
+      # Trivy
       - name: Install Trivy
         uses: aquasecurity/setup-trivy@v0.2.0
         with:
           version: '0.60.1'
 
-      - name: Scan Main Image for Vulnerabilities
-        run: |
-          trivy image \
-            --severity HIGH,CRITICAL \
-            --format json \
-            --exit-code 1 \
-            --output trivy-report.json \
-            ${{ env.REGISTRY }}/${{ env.USER_LOWER }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+      - name: Trivy Scan (HIGH/CRITICAL)
+        run: trivy image --exit-code 1 --severity HIGH,CRITICAL --format json --output trivy-report.json $IMAGE
 
-      # 5) Trivy-Report hochladen
       - name: Upload Trivy Report
         uses: ./.github/actions/upload-artifact
         with:
           name: trivy-report
           path: trivy-report.json
 
-      # 6) Build & Push des Trivy-Analysis-Images
-      - name: Build & Push Trivy-Analysis Image
+      # OWASP Dependency-Check
+      - name: Run OWASP Dependency-Check
+        uses: jeremylong/DependencyCheck-action@v2
+        with:
+          project: "heybot"
+          scanPath: "."
+          format: "ALL"
+      - name: Upload Dependency-Check Report
+        uses: actions/upload-artifact@v2
+        with:
+          name: owasp-report
+          path: dependency-check-report.*
+
+  # 4) Deploy via ArgoCD
+  deploy:
+    name: Deploy to Kubernetes via ArgoCD
+    runs-on: ubuntu-latest
+    needs:
+      - security
+      - test
+    if: github.ref == 'refs/heads/main' && needs.security.result == 'success'
+    steps:
+      - name: Install ArgoCD CLI
         run: |
-          docker build \
-            -f Dockerfile.trivy-analysis \
-            -t ${{ env.REGISTRY }}/${{ env.USER_LOWER }}/${{ env.ANALYSIS_IMAGE }}:${{ env.TAG }} \
-            .
-          docker push ${{ env.REGISTRY }}/${{ env.USER_LOWER }}/${{ env.ANALYSIS_IMAGE }}:${{ env.TAG }}
+          VERSION=$(curl -sSL https://api.github.com/repos/argoproj/argo-cd/releases/latest \
+            | grep tag_name | cut -d '"' -f4)
+          curl -sSL -o /usr/local/bin/argocd \
+            https://github.com/argoproj/argo-cd/releases/download/${VERSION}/argocd-linux-amd64
+          chmod +x /usr/local/bin/argocd
+
+      - name: Login to ArgoCD
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+        run: |
+          argocd login $ARGOCD_SERVER --token $ARGOCD_TOKEN --insecure
+
+      - name: Sync Application
+        run: argocd app sync neu-heybotchat
+
+  # 5) (Optional) Scheduled KI-Analyse für Runtime-Metriken
+  metrics-alert:
+    name: KI-Metrik-Analyse & Alerts
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Dependencies
+        run: pip install prometheus-client requests ollama-client
+      - name: Fetch & Analyze Metrics
+        run: |
+          python scripts/analyze_metrics.py \
+            --prometheus-url https://prometheus.prod.svc:9090 \
+            --ollama-url ${{ secrets.OLLAMA_API_URL }} \
+            --discord-webhook ${{ secrets.DISCORD_WEBHOOK }}
+
