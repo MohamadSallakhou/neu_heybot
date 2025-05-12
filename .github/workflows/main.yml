@@ -35,7 +35,7 @@ jobs:
         run: docker push $IMAGE
 
       - name: Upload image name for downstream jobs
-        uses: actions/upload-artifact@v2
+        uses: ./.github/actions/upload-artifact
         with:
           name: image-info
           path: |
@@ -59,7 +59,7 @@ jobs:
       - name: Pytest
         run: pytest --junitxml=pytest-report.xml
       - name: Upload test report
-        uses: actions/upload-artifact@v2
+        uses: ./.github/actions/upload-artifact
         with:
           name: pytest-report
           path: pytest-report.xml
@@ -90,7 +90,7 @@ jobs:
         run: trivy image --exit-code 1 --severity HIGH,CRITICAL --format json --output trivy-report.json $IMAGE
 
       - name: Upload Trivy Report
-        uses: actions/upload-artifact@v2
+        uses: ./.github/actions/upload-artifact
         with:
           name: trivy-report
           path: trivy-report.json
@@ -103,7 +103,7 @@ jobs:
           scanPath: "."
           format: "ALL"
       - name: Upload Dependency-Check Report
-        uses: actions/upload-artifact@v2
+        uses: ./.github/actions/upload-artifact
         with:
           name: owasp-report
           path: dependency-check-report.*
