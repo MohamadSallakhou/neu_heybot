@@ -16,7 +16,7 @@ jobs:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v2
 
       - name: Set up QEMU (für Multi-Arch Builds, optional)
         uses: docker/setup-qemu-action@v2
@@ -35,7 +35,7 @@ jobs:
         run: docker push $IMAGE
 
       - name: Upload image name for downstream jobs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: image-info
           path: |
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v2
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -59,7 +59,7 @@ jobs:
       - name: Pytest
         run: pytest --junitxml=pytest-report.xml
       - name: Upload test report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: pytest-report
           path: pytest-report.xml
@@ -70,10 +70,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v2
 
       - name: Download image-info
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: image-info
 
@@ -90,7 +90,7 @@ jobs:
         run: trivy image --exit-code 1 --severity HIGH,CRITICAL --format json --output trivy-report.json $IMAGE
 
       - name: Upload Trivy Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: trivy-report
           path: trivy-report.json
@@ -103,7 +103,7 @@ jobs:
           scanPath: "."
           format: "ALL"
       - name: Upload Dependency-Check Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: owasp-report
           path: dependency-check-report.*
@@ -141,7 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v2
       - name: Install Dependencies
         run: pip install prometheus-client requests ollama-client
       - name: Fetch & Analyze Metrics
