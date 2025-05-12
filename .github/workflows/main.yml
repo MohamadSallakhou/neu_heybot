@@ -8,7 +8,7 @@ on:
 
 env:
   USER: "mohamadsallakhou"
-  IMAGE: ghcr.io/${{ github.actor }}/heybot:${{ github.sha }}
+  IMAGE: ghcr.io/${{ env.USER }}/heybot:${{ github.sha }}
 
 jobs:
   # 1) Build + Push Base-Image
