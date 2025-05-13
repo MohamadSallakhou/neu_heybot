@@ -1,7 +1,8 @@
+# ollama-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ollama
+  name: ollama-deployment
   namespace: default
   labels:
     app: ollama

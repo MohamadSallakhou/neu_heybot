@@ -1,3 +1,4 @@
+# deployment.yaml  (heybot-app)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,11 +21,21 @@ spec:
         - name: heybot
           image: ghcr.io/mohamadsallakhou/heybot-with-trivy-output:latest
           imagePullPolicy: Always
+          # Umgebungsvariablen aus ConfigMap & Secret
           envFrom:
             - configMapRef:
-                name: heybot-config
+                name: heybot-config     # HUMOR_MODEL, OTHER_SETTING :contentReference[oaicite:2]{index=2}:contentReference[oaicite:3]{index=3}
             - secretRef:
-                name: heybot-secrets
+                name: heybot-secrets    # OLLAMA_API_URL, DISCORD_WEBHOOK_URL :contentReference[oaicite:4]{index=4}:contentReference[oaicite:5]{index=5}
+          # Explizit Ollama als Modell-Backend
+          env:
+            - name: MODEL_PROVIDER
+              value: "ollama"
+            - name: OLLAMA_API_URL
+              valueFrom:
+                secretKeyRef:
+                  name: heybot-secrets
+                  key: OLLAMA_API_URL
           ports:
             - name: http
               containerPort: 7861
